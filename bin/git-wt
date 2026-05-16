@@ -214,6 +214,7 @@ cmd_rm() {
   main_branch=$(git -C "$main_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
   report "removed" "$branch" "$path" \
     "git branch -d $branch  ${C_DIM}# if you also want to delete the branch${C_RESET}" \
+    "git pull --ff-only  ${C_DIM}# sync the main worktree with origin${C_RESET}" \
     "git wt list"
   info "returning to main worktree ${C_CYAN}${main_branch}${C_RESET} at ${C_MAGENTA}${main_path}${C_RESET}"
   printf '%s\n' "$main_path"

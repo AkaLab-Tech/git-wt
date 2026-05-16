@@ -162,6 +162,8 @@ git wt rm <branch>
 
 **Always confirm with the user before running `rm`**, even when the skill is authorized to execute shell commands. Warn explicitly if the worktree has uncommitted changes, and never pass `--force` without explicit user approval.
 
+On success, `rm` prints the **main worktree path as the last line of stdout** — the installed shell wrapper uses it to `cd` the user back to the project root after the deletion (so the user does not stay in a directory that no longer exists). When invoking `rm` programmatically, read stdout's last line the same way as for `switch` if you need that path.
+
 ## Execution modes
 
 ### Mode A — agent works in the worktree

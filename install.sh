@@ -28,14 +28,19 @@ build_wrapper() {
     "$INSTALL_DIR" "$INSTALL_DIR"
   cat <<'FUNC'
 git() {
-  if [ "$1" = "wt" ] && [ "$2" = "switch" ]; then
-    shift 2
-    local _gwt_dir
-    _gwt_dir=$(command git-wt switch "$@") || return $?
-    [ -n "$_gwt_dir" ] && cd "$_gwt_dir"
-  else
-    command git "$@"
+  if [ "$1" = "wt" ]; then
+    case "$2" in
+      switch|rm|remove)
+        local _gwt_sub="$2"
+        shift 2
+        local _gwt_dir
+        _gwt_dir=$(command git-wt "$_gwt_sub" "$@") || return $?
+        [ -n "$_gwt_dir" ] && cd "$_gwt_dir"
+        return 0
+        ;;
+    esac
   fi
+  command git "$@"
 }
 FUNC
   printf '%s\n' "$MARKER_END"

@@ -191,22 +191,33 @@ cmd_rm() {
   local branch="${1:-}"
   [ -z "$branch" ] && die "usage: git wt rm <branch>"
 
-  local path
+  local path main_path
   path=$(worktree_path_for_branch "$branch")
   [ -z "$path" ] && die "no worktree found for branch '$branch'"
+  main_path=$(main_worktree_path)
+
+  if [ "$path" = "$main_path" ]; then
+    die "refusing to remove the main worktree at ${C_MAGENTA}${path}${C_RESET}"
+  fi
 
   if [ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]; then
     warn "worktree at ${C_MAGENTA}${path}${C_RESET} has uncommitted changes"
     printf '%b' "remove anyway? ${C_DIM}[y/N]${C_RESET} " >&2
     read -r ans
     case "$ans" in y|Y|yes|YES) ;; *) info "aborted"; exit 1;; esac
-    git worktree remove --force "$path"
+    git worktree remove --force "$path" >&2
   else
-    git worktree remove "$path"
+    git worktree remove "$path" >&2
   fi
+
+  local main_branch
+  main_branch=$(git -C "$main_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
   report "removed" "$branch" "$path" \
     "git branch -d $branch  ${C_DIM}# if you also want to delete the branch${C_RESET}" \
+    "git pull --ff-only  ${C_DIM}# sync the main worktree with origin${C_RESET}" \
     "git wt list"
+  info "returning to main worktree ${C_CYAN}${main_branch}${C_RESET} at ${C_MAGENTA}${main_path}${C_RESET}"
+  printf '%s\n' "$main_path"
 }
 
 case "${1:-help}" in

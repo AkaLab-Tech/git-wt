@@ -26,11 +26,11 @@ There are no linters or tests configured. When changing `bin/git-wt`, exercise i
 
 The trick that makes `git wt switch` actually `cd` is that the work is split between two artifacts that **must stay in sync**:
 
-1. **`bin/git-wt`** — the real binary. A subprocess cannot change its parent shell's `cwd`, so this script does all the worktree work and **prints the destination path as the final line of stdout**. All decorative/log output (`info`, `warn`, `report`, etc.) goes to **stderr** via the helpers at [bin/git-wt:23-45](bin/git-wt#L23-L45). Anything that goes to stdout will be interpreted as a path by the wrapper.
+1. **`bin/git-wt`** — the real binary. A subprocess cannot change its parent shell's `cwd`, so this script does all the worktree work and **prints the destination path as the final line of stdout**. For `switch` that is the target worktree; for `rm` it is the main worktree path, so the user lands back in the project root after deleting the worktree they were standing in. All decorative/log output (`info`, `warn`, `report`, etc.) goes to **stderr** via the helpers at [bin/git-wt:23-45](bin/git-wt#L23-L45). Anything that goes to stdout will be interpreted as a path by the wrapper.
 
-2. **Shell wrapper function** — injected into `~/.zshrc` / `~/.bashrc` by `install.sh`. It shadows `git`, intercepts `git wt switch`, captures the binary's stdout, and `cd`s into it. Defined in [install.sh:25-43](install.sh#L25-L43). Other `git` invocations (and other `git wt` subcommands like `list` / `rm`) fall through to `command git`, so the binary handles them directly.
+2. **Shell wrapper function** — injected into `~/.zshrc` / `~/.bashrc` by `install.sh`. It shadows `git`, intercepts `git wt switch` / `git wt rm` / `git wt remove`, captures the binary's stdout, and `cd`s into it. Defined in [install.sh:25-47](install.sh#L25-L47). Other `git` invocations (and other `git wt` subcommands like `list`) fall through to `command git`, so the binary handles them directly.
 
-Implication when editing: any new subcommand that should change the user's directory must (a) print exactly one path on stdout's last line, and (b) be added to the wrapper's `if` branch in `install.sh`. Everything else stays purely in the binary.
+Implication when editing: any new subcommand that should change the user's directory must (a) print exactly one path on stdout's last line, and (b) be added to the wrapper's `case` branch in `install.sh`. Everything else stays purely in the binary.
 
 ## Worktree layout convention
 

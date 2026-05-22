@@ -186,7 +186,7 @@ On success, `rm` prints the **main worktree path as the last line of stdout** â€
 - Never run `git wt rm` without confirmation.
 - Never force-remove a dirty worktree unless the user explicitly authorizes it.
 - Do not create a worktree for read-only tasks â€” answer the question instead.
-- If `git wt` is not installed, say so and point the user at `https://github.com/Miguelslo27/git-wt`. Do not silently fall back to raw `git worktree` unless the user asks for it.
+- If `git wt` is not installed, say so and point the user at `https://github.com/AkaLab-Tech/git-wt`. Do not silently fall back to raw `git worktree` unless the user asks for it.
 
 ## Output parsing reminder
 

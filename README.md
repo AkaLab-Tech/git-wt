@@ -20,7 +20,7 @@ the path the binary prints.
 ## Install
 
 ```sh
-git clone https://github.com/Miguelslo27/git-wt.git
+git clone https://github.com/AkaLab-Tech/git-wt.git
 cd git-wt
 ./install.sh
 ```

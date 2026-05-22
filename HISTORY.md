@@ -8,6 +8,23 @@ Newest first. Each entry references the PR(s) that delivered the work.
 
 ---
 
+## 2026-05
+
+### Add `--from <base>` flag to `git wt switch` — 2026-05-22
+**PR:** [#5](https://github.com/AkaLab-Tech/git-wt/pull/5)
+
+`git wt switch` always cut new branches from the current `HEAD`, which forced the bundled skill to fall back to raw `git worktree add` whenever the base branch (e.g. `dev`) was not checked out in any worktree. `--from <base>` collapses Path A and Path B of the base-branch policy into a single, uniform `git wt switch` call.
+
+**Delivered:**
+- `cmd_switch` parses `--from <base>` and `--from=<base>`; the flag may appear before or after the branch name. Unknown flags and `--from` without a value are rejected.
+- `<base>` is validated with `git rev-parse --verify <base>^{commit}` and accepts any commit-ish (local ref, `origin/<name>`, SHA). The CLI does not auto-fetch — refreshing the base stays the skill's responsibility.
+- When `--from` is supplied and `<branch>` already exists in a worktree, locally, or on `origin/`, the command errors with a distinct message per case instead of silently ignoring the flag.
+- `git worktree add` is invoked with `--no-track` so a remote-tracking base does not silently set upstream on the new branch. The `report` keeps suggesting `git push -u origin <branch>` for explicit setup.
+- `skills/git-wt/SKILL.md` base-branch policy collapses to `git wt switch <new> --from <base>` in both Path A (drop the `cd <base-wt>`) and Path B (drop the raw `git worktree add` fallback). The Path A stash/pull/pop dance for updating the base ref stays.
+- `VERSION` bumped to `0.2.0`. README usage table and `git wt help` document the new flag.
+
+**Tests:** manual smoke tests in a throwaway repo with `origin/dev` present and no local `dev` — covered the happy path (new branch from `origin/dev`, no auto-tracking), all five conflict error paths (worktree / local branch / `origin/<branch>` / bogus base / missing value / missing branch / unknown flag), both `--from <base>` and `--from=<base>` forms with flag placed before or after the branch name, the stdout last-line `cd` contract, and regression of plain `git wt switch <new>` cutting from current `HEAD`.
+
 ## 2026-04
 
 ### Preserve file permissions when updating shell rc — 2026-04-16

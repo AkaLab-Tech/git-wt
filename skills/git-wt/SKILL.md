@@ -194,6 +194,14 @@ On success, `rm` prints the **main worktree path as the last line of stdout** â€
 - Do not create a worktree for read-only tasks â€” answer the question instead.
 - If `git wt` is not installed, say so and point the user at `https://github.com/AkaLab-Tech/git-wt`. Do not silently fall back to raw `git worktree` unless the user asks for it.
 
+## Version-check behavior
+
+Every `git wt` subcommand (except `help` / `version` / `self-update`) runs a once-per-day check against the upstream `bin/git-wt` and prints a single stderr nudge when a newer release is available. The cache lives at `${XDG_CACHE_HOME:-$HOME/.cache}/git-wt/version-check`. Network failures are silent unless `GWT_DEBUG=1`.
+
+When invoking `git wt` **programmatically** (capturing stdout, scripting, or running inside another agent), pass `--no-version-check` so the network call never adds latency and the cache stays clean. The flag is stripped from args before the subcommand runs, so it composes with `--from`, `--no-deps`, etc.
+
+`git wt self-update` is the matching upgrade path: pulls the recorded clone and re-runs `install.sh`. Suggest it (don't run it) when the user mentions an outdated install.
+
 ## Output parsing reminder
 
 `git wt` sends decorative output to stderr. When capturing the destination path programmatically, read stdout only and take the last line.

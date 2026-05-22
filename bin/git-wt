@@ -3,7 +3,17 @@
 # https://github.com/AkaLab-Tech/git-wt
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
+
+# --- self-update / version check constants ---------------------------------
+# GWT_UPSTREAM_URL may be overridden at run time for testing; it is intentionally
+# undocumented in `--help` because real users should rely on the hardcoded URL.
+GWT_UPSTREAM_URL="${GWT_UPSTREAM_URL:-https://raw.githubusercontent.com/AkaLab-Tech/git-wt/main/bin/git-wt}"
+GWT_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/git-wt"
+GWT_CACHE_FILE="$GWT_CACHE_DIR/version-check"
+GWT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git-wt"
+GWT_INSTALL_CONF="$GWT_CONFIG_DIR/install.conf"
+GWT_VERSION_CHECK_TTL_DEFAULT=86400
 
 # --- colors -----------------------------------------------------------------
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -72,8 +82,22 @@ Usage:
 
   git wt list                List worktrees (marks the current one).
   git wt rm <branch>         Remove the worktree for <branch>.
+  git wt self-update         Pull the latest changes in the recorded clone and
+                             re-run install.sh. Errors if the clone is missing
+                             or dirty. The clone path is recorded by install.sh
+                             at ${XDG_CONFIG_HOME:-$HOME/.config}/git-wt/install.conf.
   git wt help                Show this help.
   git wt version             Show version.
+
+Version check:
+  Every subcommand (except help / version / self-update) checks for a newer
+  upstream `git-wt` once per day and prints a single stderr nudge if found.
+  Result is cached at ${XDG_CACHE_HOME:-$HOME/.cache}/git-wt/version-check;
+  rm that file to force a refresh. Opt out with --no-version-check, with the
+  env var GWT_NO_VERSION_CHECK=1, or by running in CI (auto-skipped when
+  stdin is non-tty and CI / GITHUB_ACTIONS is set). Override the cache TTL
+  with GWT_VERSION_CHECK_TTL (seconds, default 86400). Network failures are
+  silent unless GWT_DEBUG=1.
 
 Note: `switch` needs a shell wrapper to `cd` into the target worktree. It is
 installed into your shell rc by install.sh.
@@ -397,10 +421,133 @@ cmd_rm() {
   printf '%s\n' "$main_path"
 }
 
+# _fetch_upstream_version
+# Prints the upstream VERSION to stdout. Returns non-zero on any network/parse failure.
+_fetch_upstream_version() {
+  local raw
+  if command -v curl >/dev/null 2>&1; then
+    raw=$(curl -fsSL --max-time 2 "$GWT_UPSTREAM_URL" 2>/dev/null) || return 1
+  elif command -v wget >/dev/null 2>&1; then
+    raw=$(wget -qO- --timeout=2 "$GWT_UPSTREAM_URL" 2>/dev/null) || return 1
+  else
+    return 1
+  fi
+  local ver
+  ver=$(printf '%s\n' "$raw" | awk -F'"' '/^VERSION=/{print $2; exit}')
+  [ -n "$ver" ] || return 1
+  printf '%s\n' "$ver"
+}
+
+# _version_lt <a> <b>
+# Returns 0 if <a> < <b> (semver-ish), 1 otherwise. Relies on `sort -V` (GNU + BSD).
+_version_lt() {
+  [ "$1" = "$2" ] && return 1
+  local first
+  first=$(printf '%s\n%s\n' "$1" "$2" | sort -V 2>/dev/null | head -n1)
+  [ "$first" = "$1" ]
+}
+
+# version_check
+# Reads the cache; if fresh, uses cached latest. Otherwise fetches upstream and
+# refreshes the cache. Emits a single stderr nudge when a newer version exists.
+# All errors are soft-failed; the caller is never blocked.
+version_check() {
+  local ttl="${GWT_VERSION_CHECK_TTL:-$GWT_VERSION_CHECK_TTL_DEFAULT}"
+  local now latest cached_ts cached_latest age
+  now=$(date +%s)
+
+  if [ -f "$GWT_CACHE_FILE" ]; then
+    cached_ts=$(awk -F= '/^timestamp=/{print $2}' "$GWT_CACHE_FILE" 2>/dev/null)
+    cached_latest=$(awk -F= '/^latest=/{print $2}' "$GWT_CACHE_FILE" 2>/dev/null)
+    if [ -n "${cached_ts:-}" ] && [ -n "${cached_latest:-}" ]; then
+      age=$((now - cached_ts))
+      if [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]; then
+        latest="$cached_latest"
+      fi
+    fi
+  fi
+
+  if [ -z "${latest:-}" ]; then
+    latest=$(_fetch_upstream_version 2>/dev/null) || latest=""
+    if [ -n "$latest" ]; then
+      mkdir -p "$GWT_CACHE_DIR" 2>/dev/null || true
+      {
+        printf 'timestamp=%s\n' "$now"
+        printf 'latest=%s\n'    "$latest"
+        printf 'current_at_check=%s\n' "$VERSION"
+      } > "$GWT_CACHE_FILE" 2>/dev/null || true
+    elif [ "${GWT_DEBUG:-}" = "1" ]; then
+      warn "version-check: failed to fetch upstream version from $GWT_UPSTREAM_URL"
+    fi
+  fi
+
+  if [ -n "${latest:-}" ] && _version_lt "$VERSION" "$latest"; then
+    info "${C_YELLOW}new git-wt version available:${C_RESET} ${C_CYAN}${latest}${C_RESET} (you have ${VERSION}) — run ${C_CYAN}git wt self-update${C_RESET}"
+  fi
+}
+
+cmd_self_update() {
+  [ -f "$GWT_INSTALL_CONF" ] \
+    || die "install location not recorded at ${C_MAGENTA}${GWT_INSTALL_CONF}${C_RESET}; re-run install.sh from your clone first"
+  local clone
+  clone=$(awk -F= '/^clone_path=/{print $2}' "$GWT_INSTALL_CONF")
+  [ -n "$clone" ] || die "clone_path missing from ${C_MAGENTA}${GWT_INSTALL_CONF}${C_RESET}; re-run install.sh"
+  [ -d "$clone/.git" ] || die "clone path ${C_MAGENTA}${clone}${C_RESET} is not a git repository; re-run install.sh from a fresh clone"
+
+  if [ -n "$(git -C "$clone" status --porcelain 2>/dev/null)" ]; then
+    die "clone at ${C_MAGENTA}${clone}${C_RESET} has uncommitted changes; commit or stash there before running self-update"
+  fi
+
+  local before="$VERSION" after
+  info "updating ${C_MAGENTA}${clone}${C_RESET}"
+  git -C "$clone" pull --ff-only >&2 \
+    || die "git pull --ff-only failed in ${C_MAGENTA}${clone}${C_RESET}; resolve manually"
+  info "running ${C_MAGENTA}${clone}/install.sh${C_RESET}"
+  "$clone/install.sh" >&2 \
+    || die "install.sh failed; the binary may be in an inconsistent state — re-run install.sh manually"
+
+  after=$(awk -F'"' '/^VERSION=/{print $2; exit}' "$clone/bin/git-wt" 2>/dev/null || echo "?")
+  if [ "$before" = "$after" ]; then
+    info "git-wt is already up to date at ${C_CYAN}${before}${C_RESET}"
+  else
+    info "git-wt upgraded ${C_CYAN}${before}${C_RESET} → ${C_CYAN}${after}${C_RESET}"
+  fi
+
+  rm -f "$GWT_CACHE_FILE" 2>/dev/null || true
+}
+
+# --- top-level dispatch ----------------------------------------------------
+# Pre-dispatch: strip --no-version-check from args and evaluate opt-outs.
+no_vc=0
+[ "${GWT_NO_VERSION_CHECK:-}" = "1" ] && no_vc=1
+new_args=()
+for arg in "$@"; do
+  if [ "$arg" = "--no-version-check" ]; then
+    no_vc=1
+  else
+    new_args+=("$arg")
+  fi
+done
+if [ "${#new_args[@]}" -gt 0 ]; then
+  set -- "${new_args[@]}"
+else
+  set --
+fi
+# Skip silently in CI-like non-interactive environments.
+if [ ! -t 0 ] && { [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; }; then
+  no_vc=1
+fi
+# Skip for read-only / housekeeping subcommands where a nudge would only be noise.
+case "${1:-help}" in
+  version|--version|help|-h|--help|self-update) no_vc=1 ;;
+esac
+[ "$no_vc" = "0" ] && version_check
+
 case "${1:-help}" in
   switch)            shift; cmd_switch "$@" ;;
   list|ls)           shift || true; cmd_list ;;
   rm|remove)         shift; cmd_rm "$@" ;;
+  self-update)       shift; cmd_self_update "$@" ;;
   help|-h|--help)    usage ;;
   version|--version) echo "$VERSION" ;;
   *) usage; exit 1 ;;

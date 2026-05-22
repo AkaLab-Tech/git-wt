@@ -10,6 +10,18 @@ Newest first. Each entry references the PR(s) that delivered the work.
 
 ## 2026-05
 
+### Ignore `.claude/` directory — 2026-05-22
+**PR:** [#9](https://github.com/AkaLab-Tech/git-wt/pull/9)
+
+The repo left `.claude/settings.json` (and the rest of the `.claude/` directory) as a permanent untracked entry, which caused noise on every `git status` and forced a stash/pop dance around every `git pull` on `main`. We evaluated three policies — track full file, track baseline + local override, ignore everything — and picked ignore-everything: the directory holds per-user Claude Code state (permissions, history, settings) that accumulates differently per session, so any shared baseline would generate constant merge conflicts without compensating value.
+
+**Delivered:**
+- New top-level `.gitignore` with a single `.claude/` entry and a comment cross-referencing `CLAUDE.md` for the rationale. Applies to every worktree automatically because they share the `.git/` directory.
+- `CLAUDE.md` "Project conventions" gains a bullet documenting the decision, including the explicit rejection of the baseline-plus-override option so future sessions don't relitigate it.
+- No `.claude/settings.example.json` baseline shipped; each clone starts fresh.
+
+**Tests:** in the worktree, created stub files at `.claude/settings.json` and `.claude/history.jsonl`, ran `git status --short`, and confirmed no output (the directory is silently ignored). After merge, the `?? .claude/` entry that has appeared in every `git status` of this session disappears from the main worktree as well.
+
 ### Rate-limited version check + `git wt self-update` — 2026-05-22
 **PR:** [#8](https://github.com/AkaLab-Tech/git-wt/pull/8)
 

@@ -96,10 +96,10 @@ Otherwise use `main`. Same rule for every prefix listed in *Branch naming* — `
       git -C <base-wt> stash pop
       ```
 
-   4. Create the new branch from there. The CLI creates from HEAD, which is now the updated base:
+   4. Create the new branch from the updated base using the `--from` flag — no need to `cd` first:
 
       ```sh
-      cd <base-wt> && git wt switch <new-branch>
+      git wt switch <new-branch> --from <base>
       ```
 
 4. **Path B — `<base>` is not checked out in any worktree:**
@@ -112,13 +112,13 @@ Otherwise use `main`. Same rule for every prefix listed in *Branch naming* — `
 
       This updates `refs/heads/<base>` in place. No stash dance is needed because there is no working tree to disturb.
 
-   2. Create the new worktree from the updated local ref using raw `git worktree`:
+   2. Create the new worktree from the updated local ref with `--from`:
 
       ```sh
-      git worktree add -b <new-branch> <dest> <base>
+      git wt switch <new-branch> --from <base>
       ```
 
-      where `<dest>` follows the existing layout: `<parent>/<repo>-worktrees/<sanitized-branch>` (`/` flattened to `-`).
+      The CLI places the worktree at `<parent>/<repo>-worktrees/<sanitized-branch>` (`/` flattened to `-`), same layout as any other `switch` call.
 
 ### Stop and ask the user when
 
@@ -132,11 +132,11 @@ The agent must surface and stop instead of resolving automatically:
 ### Create or switch
 
 ```sh
-git wt switch <branch>
+git wt switch <branch> [--from <base>]
 ```
 
-- Creates the worktree if it does not exist. Tracks `origin/<branch>` when that remote branch exists, otherwise creates a new local branch from `HEAD`.
-- **When `<branch>` is new (no local ref, no `origin/<branch>`), follow [Base branch policy](#base-branch-policy) first.** The CLI itself always cuts from current `HEAD`, so positioning HEAD on the updated base — or using the raw `git worktree add` fallback — is the agent's responsibility.
+- Creates the worktree if it does not exist. Without `--from`: tracks `origin/<branch>` when that remote branch exists, otherwise creates a new local branch from `HEAD`.
+- With `--from <base>`: cuts a **new** local branch from `<base>` (any commit-ish — local ref, `origin/<name>`, SHA). Errors if `<branch>` already exists in a worktree, locally, or on `origin`. Does not set upstream tracking; does not auto-fetch. Use this for the [Base branch policy](#base-branch-policy) — make sure `<base>` is refreshed before calling.
 - Prints a human-readable report to **stderr**.
 - Prints the **target path as the last line of stdout**. Capture it like this:
 

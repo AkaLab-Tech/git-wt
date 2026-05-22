@@ -40,6 +40,7 @@ Restart your shell (or `source` your rc) afterwards.
 | Command | What it does |
 | --- | --- |
 | `git wt switch <branch>` | Switch to the worktree for `<branch>`. Creates one if it doesn't exist (tracks `origin/<branch>` if it exists remotely, otherwise creates a new branch from `HEAD`). |
+| `git wt switch <branch> --from <base>` | Cut a new `<branch>` from `<base>` (any commit-ish: local ref, `origin/<name>`, SHA). Errors if `<branch>` already exists in a worktree, locally, or on `origin`. Does not set upstream tracking and does not auto-fetch. |
 | `git wt switch` | With no arg, opens an `fzf` picker over existing worktrees. |
 | `git wt list` | Pretty-prints worktrees, marks the one you're in with `*`. |
 | `git wt rm <branch>` | Removes the worktree for `<branch>`. Prompts if it has uncommitted changes. |

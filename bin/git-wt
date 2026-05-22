@@ -3,7 +3,7 @@
 # https://github.com/AkaLab-Tech/git-wt
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 # --- colors -----------------------------------------------------------------
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -49,8 +49,13 @@ usage() {
 git-wt — streamlined git worktree workflow
 
 Usage:
-  git wt switch [<branch>]   Switch to worktree for <branch> (creates if missing).
+  git wt switch [<branch>] [--from <base>]
+                             Switch to worktree for <branch> (creates if missing).
                              No arg opens an fzf picker over existing worktrees.
+                             --from cuts a NEW branch from <base> (any commit-ish:
+                             local ref, origin/<name>, SHA). Errors if <branch>
+                             already exists in a worktree, locally, or on origin.
+                             Does not set upstream tracking; no auto-fetch.
   git wt list                List worktrees (marks the current one).
   git wt rm <branch>         Remove the worktree for <branch>.
   git wt help                Show this help.
@@ -94,9 +99,32 @@ remote_branch_exists() { git show-ref --verify --quiet "refs/remotes/origin/$1";
 
 cmd_switch() {
   require_git_repo
-  local branch="${1:-}"
+  local branch="" base=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --from)
+        [ $# -ge 2 ] || die "--from requires a value"
+        base="$2"; shift 2 ;;
+      --from=*)
+        base="${1#--from=}"
+        [ -n "$base" ] || die "--from requires a value"
+        shift ;;
+      --)
+        shift
+        if [ $# -gt 0 ]; then
+          [ -z "$branch" ] || die "unexpected argument: $1"
+          branch="$1"; shift
+        fi ;;
+      -*)
+        die "unknown flag: $1" ;;
+      *)
+        [ -z "$branch" ] || die "unexpected argument: $1"
+        branch="$1"; shift ;;
+    esac
+  done
 
   if [ -z "$branch" ]; then
+    [ -z "$base" ] || die "--from requires a branch name"
     if ! command -v fzf >/dev/null 2>&1; then
       err "fzf is required for the interactive picker"
       msg ""
@@ -122,14 +150,29 @@ cmd_switch() {
     [ -z "$branch" ] && exit 0
   fi
 
-  local existing
-  existing=$(worktree_path_for_branch "$branch")
-  if [ -n "$existing" ]; then
-    report "switched to" "$branch" "$existing" \
-      "git wt list" \
-      "git wt rm $branch"
-    printf '%s\n' "$existing"
-    return 0
+  local existing=""
+  if [ -n "$base" ]; then
+    git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1 \
+      || die "base '$base' does not resolve to a commit"
+    existing=$(worktree_path_for_branch "$branch")
+    if [ -n "$existing" ]; then
+      die "branch '$branch' is already checked out at ${C_MAGENTA}${existing}${C_RESET}; --from only applies to new branches"
+    fi
+    if local_branch_exists "$branch"; then
+      die "local branch '$branch' already exists; --from only applies to new branches"
+    fi
+    if remote_branch_exists "$branch"; then
+      die "remote branch 'origin/$branch' already exists; --from only applies to new branches"
+    fi
+  else
+    existing=$(worktree_path_for_branch "$branch")
+    if [ -n "$existing" ]; then
+      report "switched to" "$branch" "$existing" \
+        "git wt list" \
+        "git wt rm $branch"
+      printf '%s\n' "$existing"
+      return 0
+    fi
   fi
 
   local root dest origin
@@ -137,7 +180,11 @@ cmd_switch() {
   dest="$root/$(sanitize_branch "$branch")"
   mkdir -p "$root"
 
-  if local_branch_exists "$branch"; then
+  if [ -n "$base" ]; then
+    info "creating new branch ${C_CYAN}${branch}${C_RESET} from ${C_CYAN}${base}${C_RESET}"
+    git worktree add --no-track -b "$branch" "$dest" "$base" >&2
+    origin="new branch from $base"
+  elif local_branch_exists "$branch"; then
     info "creating worktree for existing local branch ${C_CYAN}${branch}${C_RESET}"
     git worktree add "$dest" "$branch" >&2
     origin="local branch"

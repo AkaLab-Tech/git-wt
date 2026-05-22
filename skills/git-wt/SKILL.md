@@ -132,19 +132,25 @@ The agent must surface and stop instead of resolving automatically:
 ### Create or switch
 
 ```sh
-git wt switch <branch> [--from <base>]
+git wt switch <branch> [--from <base>] [--no-env] [--no-deps] [--yes|-y]
 ```
 
 - Creates the worktree if it does not exist. Without `--from`: tracks `origin/<branch>` when that remote branch exists, otherwise creates a new local branch from `HEAD`.
 - With `--from <base>`: cuts a **new** local branch from `<base>` (any commit-ish — local ref, `origin/<name>`, SHA). Errors if `<branch>` already exists in a worktree, locally, or on `origin`. Does not set upstream tracking; does not auto-fetch. Use this for the [Base branch policy](#base-branch-policy) — make sure `<base>` is refreshed before calling.
+- **On create only**, `switch` also bootstraps the new worktree before returning:
+  1. Copies `.env` and `.env.*` files from the main worktree (never overwriting; warns on collision). Disable with `--no-env` or `GWT_NO_ENV=1`.
+  2. Detects toolchains by marker files (npm/pnpm/yarn/bun via lockfiles + `package.json`; poetry/pipenv/pip; `Cargo.toml`; `go.mod`; `Gemfile`; `composer.json`) and prompts on `/dev/tty` to run the install command for each. Disable with `--no-deps` or `GWT_NO_DEPS=1`. Auto-accept every prompt with `--yes` / `-y` / `GWT_ASSUME_YES=1`.
+  3. When stdin is not a tty, the prompt is skipped automatically (env copy still runs). Use `--yes` to force an install in CI. Install command output is redirected to stderr to keep the stdout contract intact.
 - Prints a human-readable report to **stderr**.
 - Prints the **target path as the last line of stdout**. Capture it like this:
 
 ```sh
-target=$(git wt switch feature/x | tail -n1)
+target=$(git wt switch feature/x --no-deps | tail -n1)
 # inside your own shell commands only — this cannot change the user's interactive shell cwd
 cd "$target"
 ```
+
+When invoking `switch` programmatically from a script or agent, prefer `--no-deps` (and `--no-env` if env files would conflict) so the prompt never blocks. Use `--yes` only when you genuinely want the install to run.
 
 ### List
 

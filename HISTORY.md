@@ -10,6 +10,21 @@ Newest first. Each entry references the PR(s) that delivered the work.
 
 ## 2026-05
 
+### Bootstrap new worktrees on switch (env-copy + install prompt) — 2026-05-22
+**PR:** [#7](https://github.com/AkaLab-Tech/git-wt/pull/7)
+
+`git wt switch` left a freshly-created worktree in a "checked out but not runnable" state: the user had to copy ignored env files from the main worktree and run the right package manager by hand. This PR teaches `switch` to do both in its create path, while keeping the stdout-last-line-is-path contract intact and staying out of the way in CI.
+
+**Delivered:**
+- `bootstrap_env_files` copies `.env` and `.env.*` files from the main worktree into the new one. Never overwrites — collisions warn and skip. Bypass with `--no-env` or `GWT_NO_ENV=1`.
+- `detect_toolchains` scans for marker files and emits one `<toolchain>|<install command>` line per match, supporting polyglot repos: pnpm/yarn/bun/npm via lockfiles + `package.json`; poetry/pipenv/pip via `poetry.lock`/`Pipfile`/`requirements.txt` (lone `pyproject.toml` is skipped with a warning because the install command is ambiguous); `Cargo.toml`, `go.mod`, `Gemfile`, `composer.json` for Rust/Go/Ruby/PHP.
+- `prompt_install` reads `[y/N]` from `/dev/tty` per detected toolchain (or auto-accepts when `--yes`/`-y`/`GWT_ASSUME_YES=1`), runs the install command inside the new worktree with stdout redirected to stderr so chatter never leaks into the path output. Tools missing from `PATH` are skipped with a warning, not an error.
+- New flags `--no-env`, `--no-deps`, `--yes`/`-y` in `cmd_switch` argument parser, plus env-var equivalents (`GWT_NO_ENV`, `GWT_NO_DEPS`, `GWT_ASSUME_YES`). Bootstrap runs only on create — switching to an existing worktree is unchanged.
+- Non-tty stdin (CI, pipes) auto-skips the install prompt while still copying env files; `--yes` overrides for forced installs in CI.
+- `VERSION` bumped to `0.3.0` (new public CLI surface). `git wt help`, the README usage table, and `skills/git-wt/SKILL.md` document the new flags, env vars, and behavior.
+
+**Tests:** manual smoke tests in a throwaway polyglot repo (`package.json` + `Cargo.toml` + `go.mod` + `Gemfile` + gitignored `.env`/`.env.local`/`.env.production`) covered: `--no-deps` (env copied, no prompt); `--no-deps --no-env` (nothing copied); non-tty stdin without flags (env copied, prompt auto-skipped); `--yes` with non-tty (every toolchain auto-run, missing-from-PATH fallback skipped cargo, npm/go/bundle ran for real); `GWT_NO_DEPS=1 GWT_NO_ENV=1` env-var equivalents; stdout-only output is exactly the worktree path; collision case with a tracked `.env` triggered the skip-with-warning path while other env files copied through; switching to an existing worktree did **not** re-run bootstrap; regression on unknown flags and `--from <base>` co-existence with the new flags.
+
 ### Add `--from <base>` flag to `git wt switch` — 2026-05-22
 **PR:** [#5](https://github.com/AkaLab-Tech/git-wt/pull/5)
 

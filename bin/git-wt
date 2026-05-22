@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # git-wt — streamlined git worktree workflow
-# https://github.com/Miguelslo27/git-wt
+# https://github.com/AkaLab-Tech/git-wt
 set -euo pipefail
 
 VERSION="0.1.0"

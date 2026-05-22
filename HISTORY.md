@@ -10,6 +10,21 @@ Newest first. Each entry references the PR(s) that delivered the work.
 
 ## 2026-05
 
+### Rate-limited version check + `git wt self-update` — 2026-05-22
+**PR:** [#8](https://github.com/AkaLab-Tech/git-wt/pull/8)
+
+The installer was pull-based (clone + `./install.sh`), so users had no signal that newer releases existed and no in-place upgrade path. This PR closes both gaps: a once-per-day nudge and a `self-update` subcommand that drives the existing installer end-to-end. Both are opt-out-able and silent in CI by default.
+
+**Delivered:**
+- `version_check` runs at the start of every subcommand (except `help` / `version` / `self-update`). Reads a tiny KV cache at `${XDG_CACHE_HOME:-$HOME/.cache}/git-wt/version-check`; on miss/stale, `_fetch_upstream_version` tries `curl --max-time 2` then `wget --timeout=2` against the upstream raw `bin/git-wt`, extracts `VERSION=` with `awk`. Hardcoded URL with `GWT_UPSTREAM_URL` as an undocumented test override.
+- `_version_lt` uses `sort -V` (GNU + BSD) for semver-ish comparison. Nudge fires via the existing `info` helper (stderr only — `switch`'s stdout path contract is untouched).
+- Opt-outs: `--no-version-check` flag (stripped from `$@` before subcommand parsers see it), `GWT_NO_VERSION_CHECK=1` env var, `GWT_VERSION_CHECK_TTL` for cache TTL (default 86400s), and auto-skip when stdin is non-tty and `CI` / `GITHUB_ACTIONS` is set. Network/parse failures are silent unless `GWT_DEBUG=1`.
+- `cmd_self_update` reads `${XDG_CONFIG_HOME:-$HOME/.config}/git-wt/install.conf` (written by `install.sh`), refuses if the clone path is missing/not-a-repo/dirty, runs `git -C <clone> pull --ff-only` followed by `<clone>/install.sh`, reports `before → after`, and deletes the cache so the nudge stops.
+- `install.sh` gains `record_install_config` which persists `clone_path=` to `install.conf` on every install. `uninstall.sh` removes the cache file, `install.conf`, and `rmdir`s the parent XDG dirs if they're empty.
+- `VERSION` bumped to `0.4.0` (new public CLI surface). `git wt help` now has a `Version check:` section; the README has a `Staying up to date` section with the knob table; `skills/git-wt/SKILL.md` documents the `--no-version-check` guidance for agents invoking `git wt` programmatically.
+
+**Tests:** smoke-tested with `GWT_UPSTREAM_URL=file:///tmp/...` mocking a 9.9.9 upstream. Cases: (1) cache miss + nudge fires + cache written; (2) cache hit within TTL (broken URL on retry still shows the cached nudge, proving no network call); (3) cache miss + bad URL + `GWT_VERSION_CHECK_TTL=0` is silent without `GWT_DEBUG=1`, logs a warning with it; (4) `--no-version-check` suppresses; (5) `GWT_NO_VERSION_CHECK=1` suppresses; (6) `CI=1` and `GITHUB_ACTIONS=true` with non-tty stdin both auto-skip; (7) `self-update` against a bare + clone fixture: pulls, runs install.sh (marker file written), reports `up to date at 0.4.0`; (8) dirty fake clone aborts `self-update` with actionable error and exit 1; (9) missing `install.conf` aborts with actionable error. `bash -n` passes on `bin/git-wt`, `install.sh`, and `uninstall.sh`; `git wt help` renders the new sections; `git wt version` reports `0.4.0`.
+
 ### Bootstrap new worktrees on switch (env-copy + install prompt) — 2026-05-22
 **PR:** [#7](https://github.com/AkaLab-Tech/git-wt/pull/7)
 

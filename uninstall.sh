@@ -8,6 +8,11 @@ BIN_DEST="$INSTALL_DIR/git-wt"
 MARKER_START="# >>> git-wt >>>"
 MARKER_END="# <<< git-wt <<<"
 
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/git-wt"
+CACHE_FILE="$CACHE_DIR/version-check"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git-wt"
+CONFIG_FILE="$CONFIG_DIR/install.conf"
+
 SKILL_PATHS=(
   "$HOME/.claude/skills/git-wt"
   "$HOME/.cursor/skills/git-wt"
@@ -53,5 +58,16 @@ remove_wrapper "$HOME/.bashrc"
 for skill_dir in "${SKILL_PATHS[@]}"; do
   remove_skill "$skill_dir"
 done
+
+if [ -f "$CACHE_FILE" ]; then
+  rm -f "$CACHE_FILE"
+  info "removed $CACHE_FILE"
+fi
+if [ -f "$CONFIG_FILE" ]; then
+  rm -f "$CONFIG_FILE"
+  info "removed $CONFIG_FILE"
+fi
+rmdir "$CACHE_DIR" 2>/dev/null || true
+rmdir "$CONFIG_DIR" 2>/dev/null || true
 
 info "done. Restart your shell."

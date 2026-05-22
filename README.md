@@ -45,8 +45,23 @@ Restart your shell (or `source` your rc) afterwards.
 | `git wt switch` | With no arg, opens an `fzf` picker over existing worktrees. |
 | `git wt list` | Pretty-prints worktrees, marks the one you're in with `*`. |
 | `git wt rm <branch>` | Removes the worktree for `<branch>`. Prompts if it has uncommitted changes. |
+| `git wt self-update` | Pulls the latest changes in the recorded clone and re-runs `install.sh`. The clone path is written to `${XDG_CONFIG_HOME:-$HOME/.config}/git-wt/install.conf` by `install.sh`. Errors if the clone is missing or has uncommitted changes. |
 | `git wt help` | Show help. |
 | `git wt version` | Show version. |
+
+## Staying up to date
+
+Every `git wt` subcommand (except `help` / `version` / `self-update`) runs a rate-limited version check once per day and prints a single stderr nudge if a newer `git-wt` is available upstream. The result is cached at `${XDG_CACHE_HOME:-$HOME/.cache}/git-wt/version-check`; delete that file to force a refresh.
+
+| Knob | Effect |
+| --- | --- |
+| `--no-version-check` | One-shot opt-out for the current invocation. |
+| `GWT_NO_VERSION_CHECK=1` | Persistent opt-out (e.g. in your shell rc). |
+| `GWT_VERSION_CHECK_TTL=<seconds>` | Override the 24h cache TTL. |
+| `GWT_DEBUG=1` | Log network/parse failures (otherwise silent). |
+| Non-tty stdin **and** (`CI` or `GITHUB_ACTIONS` set) | Auto-skipped. |
+
+`git wt self-update` is the matching upgrade path: it `git pull --ff-only`s the recorded clone and re-runs `install.sh` from there. Run it manually whenever the nudge appears.
 
 ## Layout
 

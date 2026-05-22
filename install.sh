@@ -108,6 +108,19 @@ install_binary() {
   info "installed binary → $BIN_DEST"
 }
 
+# record_install_config — persist this clone's path so `git wt self-update`
+# knows where to pull and re-run install.sh from.
+record_install_config() {
+  local conf_dir="${XDG_CONFIG_HOME:-$HOME/.config}/git-wt"
+  local conf_file="$conf_dir/install.conf"
+  mkdir -p "$conf_dir"
+  {
+    printf '# Written by install.sh — used by `git wt self-update`.\n'
+    printf 'clone_path=%s\n' "$REPO_ROOT"
+  } > "$conf_file"
+  info "recorded clone path → $conf_file"
+}
+
 inject_wrapper() {
   local rc="$1"
   [ -e "$rc" ] || touch "$rc"
@@ -262,6 +275,7 @@ install_skill() {
 main() {
   parse_args "$@"
   install_binary
+  record_install_config
 
   local touched=0
   if [ -f "$HOME/.zshrc" ] || [ "${SHELL##*/}" = "zsh" ]; then

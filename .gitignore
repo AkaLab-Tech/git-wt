@@ -1,0 +1,4 @@
+# Per-user Claude Code state (permissions, history, settings, etc).
+# Each clone starts fresh — there is no shared baseline. See CLAUDE.md
+# "Project conventions" for the rationale.
+.claude/

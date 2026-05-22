@@ -58,3 +58,4 @@ Implication when editing: any new subcommand that should change the user's direc
 - Shell scripts use `set -euo pipefail` and ANSI color helpers gated on `[ -t 2 ] && [ -z "${NO_COLOR:-}" ]`. Honor `NO_COLOR` in any new output.
 - All user-facing messages from `bin/git-wt` go to stderr. Reserve stdout for machine-readable output (currently: the destination path).
 - Target POSIX-ish bash + GNU/BSD coreutils. The codebase already does dual `stat -f`/`stat -c` fallbacks for macOS vs. Linux — follow that pattern for any new platform-specific call.
+- The `.claude/` directory is gitignored. It holds per-user Claude Code state (permissions, conversation history, local settings) that accumulates differently each session. There is no shared baseline — clean clones start fresh. Do not propose tracking `.claude/settings.json` or shipping a `.claude/settings.example.json`; that path was evaluated and rejected because the merge-conflict surface outweighed the baseline value.

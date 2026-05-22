@@ -41,6 +41,7 @@ Restart your shell (or `source` your rc) afterwards.
 | --- | --- |
 | `git wt switch <branch>` | Switch to the worktree for `<branch>`. Creates one if it doesn't exist (tracks `origin/<branch>` if it exists remotely, otherwise creates a new branch from `HEAD`). |
 | `git wt switch <branch> --from <base>` | Cut a new `<branch>` from `<base>` (any commit-ish: local ref, `origin/<name>`, SHA). Errors if `<branch>` already exists in a worktree, locally, or on `origin`. Does not set upstream tracking and does not auto-fetch. |
+| `git wt switch <branch> [--no-env] [--no-deps] [--yes\|-y]` | On create, `git wt switch` also copies `.env` / `.env.*` from the main worktree (never overwriting) and prompts for the install command of every detected toolchain (npm/pnpm/yarn/bun, poetry/pipenv/pip, cargo, go, bundler, composer). `--no-env` skips the env-file copy, `--no-deps` skips the install prompt, `--yes` / `-y` auto-accepts every prompt. Env-var equivalents (set to `1`): `GWT_NO_ENV`, `GWT_NO_DEPS`, `GWT_ASSUME_YES`. Non-tty stdin behaves as `--no-deps` (env copy still runs); use `--yes` to force an install in CI. |
 | `git wt switch` | With no arg, opens an `fzf` picker over existing worktrees. |
 | `git wt list` | Pretty-prints worktrees, marks the one you're in with `*`. |
 | `git wt rm <branch>` | Removes the worktree for `<branch>`. Prompts if it has uncommitted changes. |

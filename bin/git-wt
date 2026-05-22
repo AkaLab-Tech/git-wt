@@ -3,7 +3,7 @@
 # https://github.com/AkaLab-Tech/git-wt
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # --- colors -----------------------------------------------------------------
 if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -49,13 +49,27 @@ usage() {
 git-wt — streamlined git worktree workflow
 
 Usage:
-  git wt switch [<branch>] [--from <base>]
+  git wt switch [<branch>] [--from <base>] [--no-env] [--no-deps] [--yes|-y]
                              Switch to worktree for <branch> (creates if missing).
                              No arg opens an fzf picker over existing worktrees.
                              --from cuts a NEW branch from <base> (any commit-ish:
                              local ref, origin/<name>, SHA). Errors if <branch>
                              already exists in a worktree, locally, or on origin.
                              Does not set upstream tracking; no auto-fetch.
+
+                             On create, .env / .env.* files are copied from the
+                             main worktree (never overwriting), then a per-
+                             toolchain install prompt is shown for detected
+                             package managers (npm/pnpm/yarn/bun, poetry/pipenv/
+                             pip, cargo, go, bundler, composer).
+                               --no-env       skip env-file copy
+                               --no-deps      skip install prompt entirely
+                               --yes / -y     auto-accept every install prompt
+                             Env-var equivalents (set to "1"):
+                               GWT_NO_ENV, GWT_NO_DEPS, GWT_ASSUME_YES
+                             Non-tty stdin behaves as --no-deps (env copy still
+                             runs); use --yes to force an install in CI.
+
   git wt list                List worktrees (marks the current one).
   git wt rm <branch>         Remove the worktree for <branch>.
   git wt help                Show this help.
@@ -97,9 +111,112 @@ worktree_path_for_branch() {
 local_branch_exists()  { git show-ref --verify --quiet "refs/heads/$1"; }
 remote_branch_exists() { git show-ref --verify --quiet "refs/remotes/origin/$1"; }
 
+# bootstrap_env_files <source-dir> <dest-dir>
+# Copies .env and .env.* files from source to dest. Never overwrites — warns on collision.
+# Silently does nothing if source has no matching files.
+bootstrap_env_files() {
+  local src="$1" dst="$2"
+  [ -d "$src" ] || return 0
+  local f base
+  for f in "$src"/.env "$src"/.env.*; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    if [ -e "$dst/$base" ]; then
+      warn "env-copy: ${C_CYAN}${base}${C_RESET} already exists in destination, skipping"
+      continue
+    fi
+    if cp "$f" "$dst/$base" 2>/dev/null; then
+      info "copied env file ${C_CYAN}${base}${C_RESET}"
+    else
+      warn "failed to copy ${C_CYAN}${base}${C_RESET} to ${C_MAGENTA}${dst}${C_RESET}"
+    fi
+  done
+}
+
+# detect_toolchains <dir>
+# Emits "<toolchain>|<install command>" lines on stdout for each detected marker file.
+# Multiple toolchains (polyglot repos) are supported by emitting one line each.
+detect_toolchains() {
+  local d="$1"
+  if [ -f "$d/pnpm-lock.yaml" ]; then
+    printf '%s\n' "pnpm|pnpm install"
+  elif [ -f "$d/yarn.lock" ]; then
+    printf '%s\n' "yarn|yarn install"
+  elif [ -f "$d/bun.lockb" ] || [ -f "$d/bun.lock" ]; then
+    printf '%s\n' "bun|bun install"
+  elif [ -f "$d/package-lock.json" ] || [ -f "$d/package.json" ]; then
+    printf '%s\n' "npm|npm install"
+  fi
+  if [ -f "$d/poetry.lock" ]; then
+    printf '%s\n' "poetry|poetry install"
+  elif [ -f "$d/Pipfile" ]; then
+    printf '%s\n' "pipenv|pipenv install"
+  elif [ -f "$d/requirements.txt" ]; then
+    printf '%s\n' "pip|pip install -r requirements.txt"
+  elif [ -f "$d/pyproject.toml" ]; then
+    warn "detected pyproject.toml without poetry.lock or requirements.txt; install command is ambiguous, skipping"
+  fi
+  [ -f "$d/Cargo.toml" ]     && printf '%s\n' "cargo|cargo fetch"
+  [ -f "$d/go.mod" ]         && printf '%s\n' "go|go mod download"
+  [ -f "$d/Gemfile" ]        && printf '%s\n' "bundler|bundle install"
+  [ -f "$d/composer.json" ]  && printf '%s\n' "composer|composer install"
+  return 0
+}
+
+# prompt_install <dest> <assume_yes>
+# For each detected toolchain: shows the proposed command, prompts on /dev/tty
+# (or auto-accepts when assume_yes=1), then runs the command inside <dest>.
+# Caller is responsible for the non-tty / --no-deps gating.
+prompt_install() {
+  local dest="$1" assume_yes="$2"
+  local toolchains
+  toolchains=$(detect_toolchains "$dest")
+  [ -z "$toolchains" ] && return 0
+
+  info "detected toolchain(s) in new worktree:"
+  local name cmd
+  while IFS='|' read -r name cmd; do
+    [ -z "$name" ] && continue
+    printf '%b\n' "  ${C_DIM}-${C_RESET} ${C_CYAN}${name}${C_RESET}: ${C_DIM}\$${C_RESET} ${cmd}" >&2
+  done <<< "$toolchains"
+
+  local ans cmd_bin
+  while IFS='|' read -r name cmd; do
+    [ -z "$name" ] && continue
+    if [ "$assume_yes" = "1" ]; then
+      ans="y"
+      info "auto-running ${C_CYAN}${name}${C_RESET} install (--yes)"
+    else
+      printf '%b' "run ${C_CYAN}${name}${C_RESET} install (${cmd})? ${C_DIM}[y/N]${C_RESET} " >&2
+      if ! read -r ans </dev/tty 2>/dev/null; then
+        info "no tty for prompt, skipping ${C_CYAN}${name}${C_RESET}"
+        continue
+      fi
+    fi
+    case "$ans" in
+      y|Y|yes|YES)
+        cmd_bin="${cmd%% *}"
+        if ! command -v "$cmd_bin" >/dev/null 2>&1; then
+          warn "${C_CYAN}${cmd_bin}${C_RESET} not found in PATH, skipping ${C_CYAN}${name}${C_RESET}"
+          continue
+        fi
+        info "running ${C_DIM}\$${C_RESET} ${cmd} ${C_DIM}(in ${dest})${C_RESET}"
+        # shellcheck disable=SC2086 -- intentional word-splitting on cmd
+        (cd "$dest" && $cmd) >&2 || warn "${C_CYAN}${name}${C_RESET} install failed (continuing)"
+        ;;
+      *)
+        info "skipping ${C_CYAN}${name}${C_RESET}"
+        ;;
+    esac
+  done <<< "$toolchains"
+}
+
 cmd_switch() {
   require_git_repo
-  local branch="" base=""
+  local branch="" base="" no_deps=0 no_env=0 assume_yes=0
+  case "${GWT_NO_DEPS:-}"    in ''|0) ;; *) no_deps=1 ;;    esac
+  case "${GWT_NO_ENV:-}"     in ''|0) ;; *) no_env=1 ;;     esac
+  case "${GWT_ASSUME_YES:-}" in ''|0) ;; *) assume_yes=1 ;; esac
   while [ $# -gt 0 ]; do
     case "$1" in
       --from)
@@ -109,6 +226,12 @@ cmd_switch() {
         base="${1#--from=}"
         [ -n "$base" ] || die "--from requires a value"
         shift ;;
+      --no-deps)
+        no_deps=1; shift ;;
+      --no-env)
+        no_env=1; shift ;;
+      --yes|-y)
+        assume_yes=1; shift ;;
       --)
         shift
         if [ $# -gt 0 ]; then
@@ -196,6 +319,13 @@ cmd_switch() {
     info "creating new branch ${C_CYAN}${branch}${C_RESET} from current HEAD"
     git worktree add -b "$branch" "$dest" >&2
     origin="new branch from HEAD"
+  fi
+
+  if [ "$no_env" != "1" ]; then
+    bootstrap_env_files "$(main_worktree_path)" "$dest"
+  fi
+  if [ "$no_deps" != "1" ] && { [ -t 0 ] || [ "$assume_yes" = "1" ]; }; then
+    prompt_install "$dest" "$assume_yes"
   fi
 
   report "created" "$branch ${C_DIM}(${origin})${C_RESET}" "$dest" \

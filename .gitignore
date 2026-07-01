@@ -2,3 +2,9 @@
 # Each clone starts fresh — there is no shared baseline. See CLAUDE.md
 # "Project conventions" for the rationale.
 .claude/
+
+# atelier — appended by /setup-project
+.task-log/
+.claude/settings.json
+.claude/settings.local.json
+.DS_Store

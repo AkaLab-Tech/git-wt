@@ -8,6 +8,8 @@ Each task is a `- [ ]` line with a type tag, title, `#id`, and `~estimate`. When
 
 ## 🔥 P0 — Blockers
 
+- [ ] `fix` copy only allowlisted env files into new worktrees; never .env.prod*/.env.stage* by default `#15` `~2h`
+
 ## 🎯 P1 — Next
 
 ## 💭 P2 — Backlog
